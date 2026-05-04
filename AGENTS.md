@@ -5,6 +5,7 @@
 ## Как читать проектные инструкции
 
 - Общие правила работы и язык: `docs/agent/communication.md`
+- Границы между памятью продукта, проекта и агента: `docs/agent/memory-boundaries.md`
 - Быстрый старт новой сессии: `docs/agent/session-start.md`
 - Правила фиксации follow-up задач и GitHub issue: `docs/agent/tracking.md`
 - Локальное окружение и команды запуска: `docs/agent/runtime.md`

@@ -6,6 +6,7 @@
 
 Минимальный набор:
 - `AGENTS.md`
+- `docs/agent/memory-boundaries.md`
 - `docs/agent/session-start.md`
 - `docs/agent/communication.md`
 - `docs/agent/runtime.md`
@@ -31,6 +32,7 @@
 ## Как читать проектные инструкции
 
 - Быстрый старт новой сессии: `docs/agent/session-start.md`
+- Границы между памятью продукта, проекта и агента: `docs/agent/memory-boundaries.md`
 - Общие правила работы и язык: `docs/agent/communication.md`
 - Локальное окружение и команды запуска: `docs/agent/runtime.md`
 - Типовой рабочий цикл: `docs/agent/workflow.md`
@@ -50,7 +52,39 @@
 
 ---
 
-## 2. docs/agent/session-start.md
+## 2. docs/agent/memory-boundaries.md
+
+```md
+# Memory Boundaries
+
+## Какие слои памяти есть в проекте
+
+1. Память продукта / системы
+   - roadmap
+   - worklog
+   - архитектура
+   - доменная память
+   - код
+
+2. Память среды разработки и сопровождения
+   - `AGENTS.md`
+   - `docs/agent/*.md`
+   - `.codex/skills/*`
+
+3. Память о внешних репозиториях и интеграциях
+   - business repos
+   - API contexts
+   - внешние operational зависимости
+
+## Правило
+
+- Не смешивать product memory и agent/developer memory.
+- Не смешивать доступы и workflow самого проекта с доступами внешних интеграций.
+```
+
+---
+
+## 3. docs/agent/session-start.md
 
 ```md
 # Session Start
@@ -80,7 +114,7 @@
 
 ---
 
-## 3. docs/agent/communication.md
+## 4. docs/agent/communication.md
 
 ```md
 # Communication Rules
@@ -98,7 +132,7 @@
 
 ---
 
-## 4. docs/agent/runtime.md
+## 5. docs/agent/runtime.md
 
 ```md
 # Runtime Memory
@@ -126,7 +160,7 @@
 
 ---
 
-## 5. docs/agent/workflow.md
+## 6. docs/agent/workflow.md
 
 ```md
 # Typical Workflow
@@ -146,7 +180,7 @@
 
 ---
 
-## 6. docs/agent/tracking.md
+## 7. docs/agent/tracking.md
 
 ```md
 # Tracking Rules
@@ -167,7 +201,7 @@
 
 ---
 
-## 7. docs/agent/commands.md
+## 8. docs/agent/commands.md
 
 ```md
 # Common Commands
@@ -193,7 +227,7 @@
 
 ---
 
-## 8. docs/agent/debugging.md
+## 9. docs/agent/debugging.md
 
 ```md
 # Debugging Playbook
@@ -215,7 +249,7 @@
 
 ---
 
-## 9. docs/agent/self-improvement.md
+## 10. docs/agent/self-improvement.md
 
 ```md
 # Self-Improvement Rules
@@ -236,7 +270,7 @@
 
 ---
 
-## 10. Шаблон локального skill
+## 11. Шаблон локального skill
 
 ```text
 .codex/

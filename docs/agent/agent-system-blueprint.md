@@ -24,6 +24,7 @@
 AGENTS.md
 docs/
   agent/
+    memory-boundaries.md
     session-start.md
     communication.md
     runtime.md
@@ -59,6 +60,19 @@ docs/
 - что открыть за 30 секунд
 - что важно быстро вспомнить
 - какие локальные skills уже есть
+
+### `docs/agent/memory-boundaries.md`
+
+Явное разделение слоев памяти:
+- память продукта / системы
+- память среды разработки и сопровождения
+- память о внешних бизнес-репозиториях и интеграциях
+
+Этот файл нужен, чтобы агент не смешивал:
+- поведение продукта
+- developer workflow
+- operational memory
+- внешние GitHub-контексты
 
 ### `docs/agent/communication.md`
 
@@ -191,6 +205,7 @@ Skill должен быть:
 Если в новом проекте после старта новой сессии агент “тупит”, долго вспоминает запуск, ищет рабочие команды и теряет follow-up идеи, значит blueprint стоит развернуть и заполнить минимальные файлы:
 
 - `AGENTS.md`
+- `docs/agent/memory-boundaries.md`
 - `docs/agent/session-start.md`
 - `docs/agent/runtime.md`
 - `docs/agent/workflow.md`
