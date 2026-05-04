@@ -8,6 +8,7 @@ from typing import Optional
 import httpx
 
 from app import config
+from app.project_context import get_project_profile
 
 logger = logging.getLogger(__name__)
 
@@ -59,18 +60,27 @@ def _extract_json(raw: str) -> dict:
     return json.loads(match.group())
 
 
+def _project_context_block() -> str:
+    profile = get_project_profile(config.GITHUB_DEFAULT_REPO)
+    if not profile:
+        return ""
+    return f"Контекст проекта:\n{profile.short_context}\n\n"
+
+
 async def check_is_issue(ctx: MessageContext) -> IssueCheck:
     combined = ctx.text
     if ctx.replied_text:
         combined = f"[Цитируемое сообщение]: {ctx.replied_text}\n[Новое сообщение]: {ctx.text}"
 
+    project_context = _project_context_block()
     system = (
         "Ты помощник, который анализирует сообщения из рабочего Telegram-чата. "
+        "Учитывай только переданный краткий контекст проекта, не придумывай детали сверх него. "
         "Определи, является ли сообщение задачей/багом/фичей для GitHub issue. "
         "Отвечай ТОЛЬКО валидным JSON без пояснений."
     )
     user_prompt = (
-        f"Сообщение:\n{combined}\n\n"
+        f"{project_context}Сообщение:\n{combined}\n\n"
         "Верни JSON:\n"
         '{"is_issue": true/false, "reason": "...", "needs_question": true/false, "question": "..."}\n'
         "question — короткий уточняющий вопрос, если без него нельзя сформировать задачу, иначе null."
@@ -101,17 +111,19 @@ async def generate_preview(ctx: MessageContext) -> IssuePreview:
     if ctx.replied_text:
         combined = f"[Цитируемое сообщение]: {ctx.replied_text}\n[Новое сообщение]: {ctx.text}"
 
+    project_context = _project_context_block()
     image_note = ""
     if ctx.images_b64:
         image_note = "\nК задаче приложены изображения — учти их при формировании описания."
 
     system = (
         "Ты технический менеджер, который оформляет GitHub issue на русском языке. "
+        "Учитывай только переданный краткий контекст проекта, не придумывай детали сверх него. "
         "Сохраняй смысл исходного сообщения точно. "
         "Отвечай ТОЛЬКО валидным JSON без пояснений."
     )
     user_prompt = (
-        f"Сообщение:{image_note}\n{combined}\n\n"
+        f"{project_context}Сообщение:{image_note}\n{combined}\n\n"
         "Сформируй GitHub issue. Верни JSON:\n"
         "{\n"
         '  "title": "краткое название",\n'
@@ -149,13 +161,15 @@ async def generate_preview(ctx: MessageContext) -> IssuePreview:
 
 
 async def edit_preview(current_body: str, edit_instruction: str) -> IssuePreview:
+    project_context = _project_context_block()
     system = (
         "Ты технический менеджер, который редактирует GitHub issue на русском языке. "
+        "Учитывай только переданный краткий контекст проекта, не придумывай детали сверх него. "
         "Применяй правку точно по инструкции, не меняя остальное. "
         "Отвечай ТОЛЬКО валидным JSON без пояснений."
     )
     user_prompt = (
-        f"Текущий issue (Markdown):\n{current_body}\n\n"
+        f"{project_context}Текущий issue (Markdown):\n{current_body}\n\n"
         f"Правка: {edit_instruction}\n\n"
         "Верни обновлённый JSON:\n"
         "{\n"
