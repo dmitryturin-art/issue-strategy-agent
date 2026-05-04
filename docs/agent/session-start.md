@@ -16,6 +16,7 @@
 - После изменений в логике сначала полезно прогнать:
   `PYTHONPYCACHEPREFIX=/private/tmp/issue-bot-pycache venv/bin/python -m py_compile app/*.py`
 - Если задача про поведение бота, после правок нужен живой smoke-check в Telegram.
+- Для GitHub-операций по этому репозиторию использовать обычный доступ git/VS Code, а не `GITHUB_TOKEN` из `.env`.
 
 ## Если задача уже понятна по типу
 
