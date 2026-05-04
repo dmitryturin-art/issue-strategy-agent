@@ -17,6 +17,9 @@ from app.llm import MessageContext, check_is_issue, generate_preview, edit_previ
 logger = logging.getLogger(__name__)
 router = Router()
 
+# Защита от race condition: сообщения, которые сейчас обрабатываются
+_processing: set[tuple[int, int]] = set()
+
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -113,7 +116,14 @@ async def handle_message(message: Message, bot: Bot) -> None:
         return
 
     # ── new issue preview ─────────────────────────────────────────────────────
-    await _handle_new_preview(message, bot)
+    key = (message.chat.id, message.message_id)
+    if key in _processing:
+        return
+    _processing.add(key)
+    try:
+        await _handle_new_preview(message, bot)
+    finally:
+        _processing.discard(key)
 
 
 # ─── new preview ──────────────────────────────────────────────────────────────
@@ -172,7 +182,7 @@ async def _handle_new_preview(message: Message, bot: Bot) -> None:
     body = format_issue_body(preview)
     preview_text = format_preview(preview)
 
-    sent = await message.reply(preview_text, parse_mode=ParseMode.MARKDOWN)
+    sent = await message.reply(preview_text)
 
     storage.create_task(
         chat_id=chat_id,
@@ -216,7 +226,7 @@ async def _handle_edit(message: Message, bot: Bot) -> None:
     new_body = format_issue_body(updated)
     new_text = format_preview(updated)
 
-    sent = await message.reply(new_text, parse_mode=ParseMode.MARKDOWN)
+    sent = await message.reply(new_text)
 
     storage.update_task_preview(
         task["id"],

@@ -2,6 +2,7 @@ import json
 import sqlite3
 import logging
 from contextlib import contextmanager
+from sqlite3 import IntegrityError
 from datetime import datetime
 from typing import Optional
 
@@ -46,8 +47,10 @@ def init_db() -> None:
                 updated_at          TEXT    NOT NULL
             )
         """)
+        # Миграция: заменяем старый неуникальный индекс на уникальный
+        conn.execute("DROP INDEX IF EXISTS idx_tasks_source")
         conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tasks_source
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_unique_source
             ON tasks(chat_id, source_message_id)
         """)
         conn.execute("""
@@ -85,34 +88,31 @@ def create_task(
     title: str,
     body: str,
     labels: list[str],
-) -> int:
+) -> Optional[int]:
     now = datetime.utcnow().isoformat()
-    with _conn() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO tasks
-              (chat_id, source_message_id, reply_message_id, preview_message_id,
-               author_id, author_username, repo, title, body, labels_json,
-               status, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                chat_id,
-                source_message_id,
-                reply_message_id,
-                preview_message_id,
-                author_id,
-                author_username,
-                repo,
-                title,
-                body,
-                json.dumps(labels, ensure_ascii=False),
-                "preview",
-                now,
-                now,
-            ),
+    try:
+        with _conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO tasks
+                  (chat_id, source_message_id, reply_message_id, preview_message_id,
+                   author_id, author_username, repo, title, body, labels_json,
+                   status, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    chat_id, source_message_id, reply_message_id, preview_message_id,
+                    author_id, author_username, repo, title, body,
+                    json.dumps(labels, ensure_ascii=False), "preview", now, now,
+                ),
+            )
+            return cur.lastrowid
+    except IntegrityError:
+        logger.warning(
+            "Дубликат: задача для chat_id=%s source_message_id=%s уже существует",
+            chat_id, source_message_id,
         )
-        return cur.lastrowid
+        return None
 
 
 def update_task_preview(

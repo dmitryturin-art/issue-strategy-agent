@@ -241,6 +241,7 @@ async def _call_llm(model: str, system: str, content) -> str:
 
 
 async def _do_request(base_url: str, api_key: str, payload: dict) -> str:
+    logger.info("LLM запрос: модель=%s провайдер=%s", payload.get("model"), base_url)
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",

@@ -6,6 +6,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
+from app import config
 from app.config import TELEGRAM_BOT_TOKEN, DATABASE_PATH
 from app.storage import init_db
 from app.bot import router
@@ -30,7 +31,9 @@ async def main() -> None:
     dp = Dispatcher()
     dp.include_router(router)
 
-    logger.info("Starting bot polling...")
+    # Сбрасываем накопившиеся апдейты при старте — они уже не актуальны
+    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Запуск бота (модель: %s)", config.LLM_MODEL)
     await dp.start_polling(bot, allowed_updates=["message"])
 
 
