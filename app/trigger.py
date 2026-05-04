@@ -55,7 +55,16 @@ def is_reply_to_bot(message: Message, bot_id: int) -> bool:
 
 
 def is_approve(text: str) -> bool:
-    return text.strip().lower() in APPROVE_PHRASES
+    # Убираем пунктуацию и лишние пробелы перед сравнением
+    clean = re.sub(r"[.,!?;:)(\"']+", "", text.strip().lower()).strip()
+    if clean in APPROVE_PHRASES:
+        return True
+    # Короткое сообщение (1-2 слова) содержит слово-апрув
+    words = clean.split()
+    if len(words) <= 2:
+        approve_words = {"approve", "аппрув", "создавай", "подтверждаю", "заводи"}
+        return bool(set(words) & approve_words)
+    return False
 
 
 def is_edit_request(text: str) -> bool:

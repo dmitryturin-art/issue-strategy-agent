@@ -115,6 +115,15 @@ async def handle_message(message: Message, bot: Bot) -> None:
         await _handle_edit(message, bot)
         return
 
+    # ── reply to bot, но не approve и не edit — подсказка ────────────────────
+    if is_reply_to_bot and not trigger.is_triggered(message):
+        await message.reply(
+            "Не понял команду.\n"
+            "• approve или создавай — создать issue\n"
+            "• измени... / поправь... — поправить preview"
+        )
+        return
+
     # ── new issue preview ─────────────────────────────────────────────────────
     key = (message.chat.id, message.message_id)
     if key in _processing:

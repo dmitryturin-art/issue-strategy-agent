@@ -37,6 +37,7 @@ LLM_MODEL: str = os.getenv("LLM_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
 LLM_FALLBACK_BASE_URL: str = os.getenv("LLM_FALLBACK_BASE_URL", "")
 LLM_FALLBACK_API_KEY: str = os.getenv("LLM_FALLBACK_API_KEY", "")
 LLM_FALLBACK_MODEL: str = os.getenv("LLM_FALLBACK_MODEL", "")
+LLM_TIMEOUT: float = float(os.getenv("LLM_TIMEOUT", "30"))
 
 GITHUB_TOKEN: str = _require("GITHUB_TOKEN")
 GITHUB_DEFAULT_REPO: str = _require("GITHUB_DEFAULT_REPO")
