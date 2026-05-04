@@ -1,0 +1,7 @@
+interface:
+  display_name: "Routing Debug"
+  short_description: "Диагностика неверного роутинга"
+  default_prompt: "Используй $bot-debug-routing, чтобы разобраться, почему Telegram-бот выбрал не тот сценарий обработки сообщения."
+
+policy:
+  allow_implicit_invocation: true

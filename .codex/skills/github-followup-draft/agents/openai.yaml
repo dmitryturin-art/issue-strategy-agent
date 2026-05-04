@@ -1,0 +1,7 @@
+interface:
+  display_name: "Follow-up Draft"
+  short_description: "Черновик backlog item или issue"
+  default_prompt: "Используй $github-followup-draft, чтобы оформить по итогам обсуждения backlog item или draft GitHub issue для этого проекта."
+
+policy:
+  allow_implicit_invocation: true

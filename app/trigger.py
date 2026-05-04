@@ -99,9 +99,23 @@ _ISSUE_ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SEARCH_VERB_RE = re.compile(
+    r"\b(найди|найти|поищи|поиск|ищи|покажи|показать|список|списком|дай|выведи)\b",
+    re.IGNORECASE,
+)
+_ISSUE_ENTITY_RE = re.compile(r"\b(issue|issues|задач[аиуы]?|тикет(?:ы|ов|а)?)\b", re.IGNORECASE)
 _STATE_OPEN_RE = re.compile(r"\b(открытые|открытых|открыт|open)\b", re.IGNORECASE)
 _STATE_CLOSED_RE = re.compile(r"\b(закрытые|закрытых|закрыт|closed)\b", re.IGNORECASE)
-_STATE_ALL_RE = re.compile(r"\b(все|all|любые)\b", re.IGNORECASE)
+_STATE_ALL_RE = re.compile(r"\b(все|всех|всем|всеми|all|любые)\b", re.IGNORECASE)
+_SEARCH_NOISE_RE = re.compile(
+    r"\b("
+    r"найди|найти|поищи|поиск|ищи|покажи|показать|дай|выведи|список|списком|"
+    r"issue|issues|задач[аиуы]?|тикет(?:ы|ов|а)?|"
+    r"открытые|открытых|открыт|open|закрытые|закрытых|закрыт|closed|все|всех|всем|всеми|all|любые|"
+    r"мне|пожалуйста"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def extract_issue_number(text: str) -> Optional[int]:
@@ -112,7 +126,9 @@ def extract_issue_number(text: str) -> Optional[int]:
 def has_issue_action(text: str) -> bool:
     """True if the message likely refers to an existing issue action or search."""
     clean = re.sub(rf"@\w+", "", text)
-    return bool(_ISSUE_ACTION_RE.search(clean))
+    if _ISSUE_ACTION_RE.search(clean):
+        return True
+    return looks_like_issue_search(clean)
 
 
 def extract_state_filter(text: str) -> Optional[str]:
@@ -124,3 +140,17 @@ def extract_state_filter(text: str) -> Optional[str]:
     if _STATE_ALL_RE.search(text):
         return "all"
     return None
+
+
+def normalize_issue_search_query(text: str) -> str:
+    """Strip service words from issue search text. Empty string means list by state."""
+    clean = re.sub(rf"@\w+", "", text)
+    clean = _SEARCH_NOISE_RE.sub(" ", clean)
+    clean = re.sub(r"[\"'`«»“”„:;!?.,()]+", " ", clean)
+    clean = re.sub(r"^\s*(про|по|о|об|насчет)\b", " ", clean, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", clean).strip()
+
+
+def looks_like_issue_search(text: str) -> bool:
+    clean = re.sub(rf"@\w+", "", text)
+    return bool(_SEARCH_VERB_RE.search(clean) and (_ISSUE_ENTITY_RE.search(clean) or extract_state_filter(clean)))

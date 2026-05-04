@@ -1,0 +1,7 @@
+interface:
+  display_name: "Issue Triage"
+  short_description: "Разбор обращения к боту"
+  default_prompt: "Используй $issue-triage, чтобы понять, как Telegram-бот должен интерпретировать обращение пользователя и какой сценарий выбрать."
+
+policy:
+  allow_implicit_invocation: true

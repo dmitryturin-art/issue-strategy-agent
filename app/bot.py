@@ -14,7 +14,7 @@ from app import config, storage, trigger
 from app.formatter import format_preview, format_issue_body
 from app.github_client import (
     create_issue, get_issue, add_comment,
-    close_issue, reopen_issue, update_issue, search_issues,
+    close_issue, reopen_issue, update_issue, search_issues, list_issues,
 )
 from app.llm import (
     MessageContext, ActionIntent,
@@ -151,6 +151,20 @@ async def handle_message(message: Message, bot: Bot) -> None:
             await _handle_issue_search(message, query, state)
             return
         _pending_search.pop(pending_key, None)
+
+    # ── явный поиск/list issues без LLM ──────────────────────────────────────
+    if trigger.looks_like_issue_search(clean_text):
+        query = trigger.normalize_issue_search_query(clean_text)
+        state = trigger.extract_state_filter(clean_text)
+        if state:
+            await _handle_issue_search(message, query, state)
+        else:
+            _pending_search[(message.chat.id, message.from_user.id)] = query
+            await message.reply(
+                "Искать среди открытых или закрытых?\n"
+                "Ответьте: @" + config.BOT_USERNAME + " открытые / закрытые / все"
+            )
+        return
 
     # ── issue actions: комментарий, закрытие, обновление, поиск ──────────────
     if trigger.has_issue_action(clean_text):
@@ -326,7 +340,8 @@ async def _dispatch_issue_intent(message: Message, intent: ActionIntent) -> None
     elif intent.action == "update":
         await _handle_issue_update(message, intent.issue_number, intent.instruction)
     elif intent.action == "search":
-        query = intent.search_query or intent.instruction
+        raw_query = intent.search_query or intent.instruction or ""
+        query = trigger.normalize_issue_search_query(raw_query)
         if intent.state_filter:
             await _handle_issue_search(message, query, intent.state_filter)
         else:
@@ -409,14 +424,20 @@ async def _handle_issue_update(message: Message, number: int, instruction: str) 
 async def _handle_issue_search(message: Message, query: str, state: str) -> None:
     state_label = {"open": "открытые", "closed": "закрытые", "all": "все"}.get(state, state)
     try:
-        results = await search_issues(query=query, state=state)
+        if query:
+            results = await search_issues(query=query, state=state)
+        else:
+            results = await list_issues(state=state)
     except Exception as e:
         logger.error("GitHub search error: %s", e)
         await message.reply("Не удалось выполнить поиск на GitHub.")
         return
 
     if not results:
-        await message.reply(f"Issues по запросу «{query}» не найдены ({state_label}).")
+        if query:
+            await message.reply(f"Issues по запросу «{query}» не найдены ({state_label}).")
+        else:
+            await message.reply(f"{state_label.capitalize()} issue не найдены.")
         return
 
     lines = [f"Найдено {len(results)} issue ({state_label}):"]

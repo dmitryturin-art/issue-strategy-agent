@@ -1,0 +1,7 @@
+interface:
+  display_name: "Bot Restart Check"
+  short_description: "Локальный рестарт и smoke-check бота"
+  default_prompt: "Используй $bot-restart-smoke-check, чтобы перезапустить локального Telegram-бота и быстро проверить его после изменений."
+
+policy:
+  allow_implicit_invocation: true

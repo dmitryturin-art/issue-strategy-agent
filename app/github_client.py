@@ -145,14 +145,17 @@ async def search_issues(
     query: str,
     state: str = "open",
 ) -> list[dict]:
-    """Search issues in the repo. Returns up to 5 results."""
+    """Search issues in the repo. Returns up to 100 results."""
     target_repo = repo or GITHUB_DEFAULT_REPO
-    q = f"{query} repo:{target_repo} is:issue state:{state}"
+    qualifiers = [f"repo:{target_repo}", "is:issue"]
+    if state in {"open", "closed"}:
+        qualifiers.append(f"state:{state}")
+    q = " ".join(([query] if query else []) + qualifiers)
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         resp = await client.get(
             f"{_BASE}/search/issues",
             headers=_HEADERS,
-            params={"q": q, "per_page": 5},
+            params={"q": q, "per_page": 100},
         )
         resp.raise_for_status()
         items = resp.json().get("items", [])
@@ -164,4 +167,32 @@ async def search_issues(
             "url": i["html_url"],
         }
         for i in items
+    ]
+
+
+async def list_issues(
+    *,
+    repo: Optional[str] = None,
+    state: str = "open",
+) -> list[dict]:
+    """List repo issues by state. Returns up to 100 issues, excluding pull requests."""
+    target_repo = repo or GITHUB_DEFAULT_REPO
+    owner, name = _parse_repo(target_repo)
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(
+            f"{_BASE}/repos/{owner}/{name}/issues",
+            headers=_HEADERS,
+            params={"state": state, "per_page": 100},
+        )
+        resp.raise_for_status()
+        items = resp.json()
+    return [
+        {
+            "number": i["number"],
+            "title": i["title"],
+            "state": i["state"],
+            "url": i["html_url"],
+        }
+        for i in items
+        if "pull_request" not in i
     ]
