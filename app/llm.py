@@ -12,7 +12,7 @@ from app.project_context import get_project_profile
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = 60.0
+TIMEOUT = config.LLM_TIMEOUT
 
 
 @dataclass

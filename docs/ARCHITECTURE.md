@@ -2,43 +2,75 @@
 
 ## Общий принцип
 
-Бот — это **реактивный агент с жёстким trigger-фильтром**. Он не является полноценным LLM-агентом, читающим весь чат. Он обрабатывает только явно адресованные ему сообщения.
-Если задан `ALLOWED_CHAT_IDS`, бот дополнительно игнорирует все чаты, которых нет в белом списке.
+Бот — **реактивный агент с жёстким trigger-фильтром**. Не является LLM-агентом, читающим весь чат. Обрабатывает только явно адресованные ему сообщения.
+
+---
+
+## Флоу сообщения
 
 ```
-Telegram Group
+Входящее сообщение
       │
-      │  (все сообщения)
       ▼
-┌─────────────────┐
-│  trigger.py     │  ← жёсткий фильтр
-│  is_triggered() │
-└────────┬────────┘
-         │ не для бота → ИГНОР
-         │ для бота ↓
-┌────────▼────────┐
-│   bot.py        │  ← главный обработчик
-│  handle_message │
-└────────┬────────┘
-         │
-    ┌────┴────────────────┬────────────────┐
-    │                     │                │
-    ▼                     ▼                ▼
-[новая задача]      [правка preview]   [approve]
-    │                     │                │
-    ▼                     ▼                ▼
-[llm.py]            [llm.py]         [github_client.py]
-check_is_issue()    edit_preview()   create_issue()
-generate_preview()       │                │
-    │                    ▼                ▼
-    ▼              [storage.py]     [storage.py]
-[formatter.py]    update_task()    mark_created()
-format_preview()
-    │
-    ▼
-[storage.py]
-create_task()
+[trigger.py] — пропускаем только: @упоминание / reply на бота / /task /issue /add
+      │ нет → ИГНОР
+      │ да
+      ▼
+Голосовое/аудио? → заглушка-ответ, return
+
+Reply на бота?
+  ├─ нет @mention и не /команда → ИГНОР (молча)   ← все действия требуют явного mention
+  ├─ is_approve(text) + has_explicit_trigger?  → _handle_approve()
+  ├─ is_edit_request(text) + has_explicit_trigger? → _handle_edit()
+  └─ иначе → _handle_new_preview()
+
+_handle_new_preview():
+  1. In-memory lock (защита от race condition)
+  2. Anti-dup: get_task_by_source(chat_id, source_message_id)
+  3. _extract_context() → text + replied_text + images_b64
+  4. llm.check_is_issue() → is_issue?
+     NO  → "Похоже, это не задача..."
+     YES → llm.generate_preview() → IssuePreview
+  5. formatter.format_preview() → plain text
+  6. bot.reply(preview) → sent.message_id
+  7. storage.create_task() (UNIQUE constraint защищает от дублей)
+
+_handle_edit():
+  1. get_task_by_preview_msg(replied_msg_id)
+  2. llm.edit_preview(body, instruction)
+  3. bot.reply(new_preview) → new sent.message_id
+  4. storage.update_task_preview(new_preview_message_id)
+
+_handle_approve():
+  1. get_task_by_preview_msg(replied_msg_id)
+  2. status == 'created'? → вернуть ссылку
+  3. github_client.create_issue()
+  4. storage.mark_task_created(url)
+  5. bot.reply("Issue создан: <url>")
 ```
+
+---
+
+## Триггеры и команды
+
+### Что активирует бота
+
+| Условие | Пример |
+|---|---|
+| `@BOT_USERNAME` в тексте | `@hermeskimg_bot добавить фичу` |
+| Reply на сообщение бота | ответ на превью |
+| Команды `/task`, `/issue`, `/add` | `/task исправить баг` |
+
+### Approve (создать issue)
+
+Работает **только** через reply на превью-сообщение бота **с явным @mention**.
+
+Распознаёт: `approve`, `аппрув`, `создавай`, `заводи`, `подтверждаю`, `да`, `ок`, `ok`, `давай`, `го`, `принято`, `подтверждено`, `yes`, `create`  
+Нечёткое: убирает пунктуацию, в коротких сообщениях (1-2 слова) ищет ключевые слова.
+
+### Правка preview
+
+Reply на превью **с явным @mention**, начинающийся с: `измени`, `поправь`, `добавь`, `убери`, `переформулируй`, `исправь`, `удали`, `замени`, `сделай`, `напиши`, `уточни`, `расширь`, `сократи`, `перепиши`
 
 ---
 
@@ -47,136 +79,69 @@ create_task()
 ### `config.py`
 Единственный источник конфигурации. Читает `.env` через `python-dotenv`. Падает с ошибкой при старте, если обязательная переменная не задана.
 
+Ключевые переменные:
+- `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` — основной провайдер
+- `LLM_FALLBACK_*` — запасной провайдер (опционально)
+- `LLM_TIMEOUT` — таймаут в секундах (по умолчанию 30)
+- `ALLOWED_CHAT_IDS` — белый список chat_id через запятую (пусто = без ограничений)
+
 ### `trigger.py`
-Отвечает на вопрос: "Надо ли обрабатывать это сообщение?"
-
-Правила:
-1. Текст содержит `@BOT_USERNAME` → да
-2. Первое слово `/task`, `/issue`, `/add` → да
-3. Reply на сообщение бота (check по `bot_id`) → да
-4. Иначе → нет
-
-Дополнительно определяет тип действия:
-- `is_approve(text)` — пользователь подтверждает создание issue
-- `is_edit_request(text)` — пользователь просит поправить preview
+Отвечает на вопрос: "надо ли обрабатывать это сообщение?"  
+Определяет тип действия: `is_approve()`, `is_edit_request()`.
 
 ### `llm.py`
-Три функции:
-- `check_is_issue(ctx)` → `IssueCheck` — определяет, похоже ли сообщение на задачу
-- `generate_preview(ctx)` → `IssuePreview` — формирует структурированный issue
-- `edit_preview(body, instruction)` → `IssuePreview` — применяет правку
+Три функции: `check_is_issue()`, `generate_preview()`, `edit_preview()`.  
+Все вызывают `_call_llm()` → `_do_request()` через `httpx`.  
+При ошибке основного провайдера (timeout, 402, 429, 5xx) — автопереключение на `LLM_FALLBACK_*`.  
+Логирует модель и провайдер на каждый запрос.
 
-Все три вызывают один `_call_llm()` через `httpx`. Всегда используется `LLM_MODEL`. Если модель не поддерживает vision — API вернёт ошибку, бот сообщит пользователю.
-
-**Контекст (`MessageContext`):**
-```python
-@dataclass
-class MessageContext:
-    text: str               # текст текущего сообщения
-    replied_text: str|None  # текст replied message (если есть)
-    images_b64: list[str]   # base64-картинки из обоих сообщений
-```
+Поддержка изображений: фото передаются как `image_url` (base64 data URI, формат OpenAI vision).
 
 ### `storage.py`
-SQLite через стандартный `sqlite3`. Один файл БД. Таблица `tasks`.
-
-Схема:
-| Поле | Описание |
-|---|---|
-| `source_message_id` | ID сообщения, которое триггернуло бота |
-| `reply_message_id` | ID сообщения, на которое ответил пользователь (если было) |
-| `preview_message_id` | ID сообщения бота с preview (обновляется при правках) |
-| `status` | `preview` → `created` |
-| `github_issue_url` | Заполняется после создания issue |
-
-Антидубликат: при создании нового preview проверяем `source_message_id`. Если запись есть — не создаём повторно.
+SQLite через стандартный `sqlite3`. Таблица `tasks`.  
+UNIQUE индекс на `(chat_id, source_message_id)` — гарантирует отсутствие дублей на уровне БД.  
+`create_task()` возвращает `None` при конфликте вместо исключения.
 
 ### `github_client.py`
-Один метод `create_issue()`. Вызывает `POST /repos/{owner}/{repo}/issues` через GitHub REST API v3. Авторизация через Bearer token.
+`POST /repos/{owner}/{repo}/issues` через GitHub REST API v3.
 
 ### `formatter.py`
-Два метода:
-- `format_preview(preview)` → Markdown для Telegram (с ParseMode.MARKDOWN)
-- `format_issue_body(preview)` → Markdown для тела GitHub issue
+`format_preview()` — нумерованный список для Telegram (plain text, без ParseMode).  
+`format_issue_body()` — Markdown для тела GitHub issue.
 
 ### `bot.py`
-Aiogram Router с единственным `@router.message()` handler. Внутри — диспетчеризация по типу действия. Команды `/start` и `/help` обрабатываются отдельно.
+Один `@router.message()` handler. In-memory set `_processing` защищает от race condition.
 
 ---
 
 ## Работа с изображениями
 
-Бот поддерживает два сценария:
-
-**1. Фото в текущем сообщении**
+**Сценарий 1 — фото напрямую:**
 ```
-User: [📷 скриншот] + "вот баг @bot"
+User: [📷 скриншот] + "@bot вот баг"
 ```
 
-**2. Reply на чужое фото**
+**Сценарий 2 — reply на чужое фото:**
 ```
 User_A: [📷 макет интерфейса]
 User_B: reply → "@bot нужно реализовать этот экран"
 ```
 
-В обоих случаях `_extract_context()` собирает фото из обоих сообщений и передаёт их в LLM как `image_url` (base64 data URI, формат OpenAI vision API).
+`_extract_context()` собирает фото из обоих сообщений, передаёт в LLM как base64 image_url.
 
 ---
 
-## Флоу сообщения
+## Защита от дублей
 
-```
-1. Incoming message
-2. trigger.py → is_triggered? (+ is_reply_to_bot?)
-   NO  → return (silence)
-   YES ↓
-3. Voice/audio? → stub reply, return
-4. is_approve + reply_to_bot? → _handle_approve()
-5. is_edit + reply_to_bot?    → _handle_edit()
-6. else                        → _handle_new_preview()
-
-_handle_new_preview():
-  1. Anti-dup check (source_message_id)
-  2. _extract_context() → text + replied_text + images
-  3. llm.check_is_issue() → is_issue?
-     NO  → "Похоже, это не задача..."
-     YES ↓
-  4. llm.generate_preview() → IssuePreview
-  5. formatter.format_preview() → Markdown text
-  6. bot.reply(preview_text) → get sent.message_id
-  7. storage.create_task()
-
-_handle_edit():
-  1. get_task_by_preview_msg(replied_msg_id)
-  2. llm.edit_preview(current_body, instruction)
-  3. bot.reply(new_preview_text) → get new sent.message_id
-  4. storage.update_task_preview(new_preview_message_id)
-
-_handle_approve():
-  1. get_task_by_preview_msg(replied_msg_id)
-  2. status == 'created'? → return existing url
-  3. github_client.create_issue()
-  4. storage.mark_task_created(url)
-  5. bot.reply("Issue создан: <url>")
-```
-
----
-
-## Зависимости
-
-| Пакет | Зачем |
-|---|---|
-| `aiogram 3` | Telegram Bot framework |
-| `httpx` | Async HTTP для LLM и GitHub API |
-| `python-dotenv` | Чтение `.env` файла |
-
-Нет ORM, нет тяжёлых фреймворков. SQLite через стандартную библиотеку.
+1. `drop_pending_updates=True` при старте — не обрабатываем накопившиеся апдейты
+2. In-memory set `_processing` — блокирует параллельную обработку одного сообщения
+3. UNIQUE индекс в БД — последний рубеж, `IntegrityError` обрабатывается мягко
 
 ---
 
 ## Деплой
 
-Запуск через `systemd`. Бинарник — Python в venv. Логи через `journald`.
+Запуск через `systemd`. Логи через `journald`.
 
 ```
 /opt/issue-bot/

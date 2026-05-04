@@ -2,18 +2,15 @@
 
 Telegram-бот для оформления GitHub Issues из сообщений в группе.
 
-Бот **не читает чат** и **не отвечает на обычные сообщения**. Он реагирует только если:
-- сообщение содержит `@bot_username`
-- сообщение — reply на сообщение бота
-- сообщение начинается с `/task`, `/issue`, `/add`
+Бот **не читает чат** и **не отвечает на обычные сообщения**. Реагирует только на явные обращения.
 
 ---
 
 ## Быстрый старт (локально)
 
 ```bash
-git clone https://github.com/your/issue-bot.git
-cd issue-bot
+git clone https://github.com/dmitryturin-art/issue-strategy-agent.git
+cd issue-strategy-agent
 
 python3 -m venv venv
 source venv/bin/activate
@@ -33,13 +30,16 @@ python -m app.main
 | Переменная | Описание |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Токен бота от [@BotFather](https://t.me/BotFather) |
-| `BOT_USERNAME` | Username бота без `@` (например `issue_helper_bot`) |
-| `ALLOWED_CHAT_IDS` | Список разрешённых `chat_id` через запятую. Если пусто — бот работает в любых чатах |
-| `LLM_BASE_URL` | Base URL OpenAI-совместимого API (OpenRouter, OpenAI, свой) |
-| `LLM_API_KEY` | API-ключ провайдера |
-| `LLM_MODEL` | Модель по умолчанию (например `meta-llama/llama-3.1-8b-instruct:free`) |
-| `LLM_VISION_MODEL` | Модель для обработки изображений (например `google/gemini-flash-1.5`) |
-| `GITHUB_TOKEN` | Personal Access Token GitHub с правами `repo` |
+| `BOT_USERNAME` | Username бота без `@` |
+| `ALLOWED_CHAT_IDS` | Разрешённые `chat_id` через запятую. Пусто — без ограничений |
+| `LLM_BASE_URL` | Base URL OpenAI-совместимого API |
+| `LLM_API_KEY` | API-ключ основного провайдера |
+| `LLM_MODEL` | Модель (например `openai/gpt-5.4-mini`) |
+| `LLM_FALLBACK_BASE_URL` | Base URL запасного провайдера (опционально) |
+| `LLM_FALLBACK_API_KEY` | API-ключ запасного провайдера |
+| `LLM_FALLBACK_MODEL` | Модель запасного провайдера (например `openrouter/free`) |
+| `LLM_TIMEOUT` | Таймаут LLM в секундах (по умолчанию `30`) |
+| `GITHUB_TOKEN` | Personal Access Token с правами `repo` |
 | `GITHUB_DEFAULT_REPO` | Репозиторий в формате `owner/repo` |
 | `DATABASE_PATH` | Путь к SQLite-файлу (по умолчанию `./data/bot.db`) |
 
@@ -59,20 +59,20 @@ sudo chown botuser:botuser /opt/issue-bot
 ### 2. Клонирование и настройка
 
 ```bash
-sudo -u botuser git clone https://github.com/your/issue-bot.git /opt/issue-bot
+sudo -u botuser git clone https://github.com/dmitryturin-art/issue-strategy-agent.git /opt/issue-bot
 cd /opt/issue-bot
 
 sudo -u botuser python3.10 -m venv venv
 sudo -u botuser venv/bin/pip install -r requirements.txt
 
 sudo -u botuser cp .env.example .env
-sudo -u botuser nano .env  # заполнить переменные
+sudo -u botuser nano .env
 ```
 
 ### 3. Установка systemd service
 
 ```bash
-# Отредактируйте User= в issue-bot.service если нужно (по умолчанию ubuntu)
+# Отредактируйте User= в issue-bot.service если нужно
 sudo cp issue-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable issue-bot
@@ -83,7 +83,7 @@ sudo systemctl start issue-bot
 
 ```bash
 sudo journalctl -u issue-bot -f
-# или последние 100 строк:
+# последние 100 строк:
 sudo journalctl -u issue-bot -n 100
 ```
 
@@ -91,7 +91,6 @@ sudo journalctl -u issue-bot -n 100
 
 ```bash
 sudo systemctl restart issue-bot
-# статус:
 sudo systemctl status issue-bot
 ```
 
@@ -101,43 +100,53 @@ sudo systemctl status issue-bot
 
 ### Создание issue
 
-Упомяните бота в любом сообщении или reply на чужое сообщение:
+Упомяните бота или используйте команду:
 
 ```
-Нужно добавить фильтрацию по дате в отчётах @issue_bot
+@hermeskimg_bot задача: при загрузке файла > 10MB падает 500
 ```
 
-или
-
 ```
-@issue_bot задача: при загрузке файла > 10MB падает 500
+/task добавить фильтрацию по дате в отчётах
 ```
 
-или reply на сообщение/скриншот с `@issue_bot`.
+Или reply на чужое сообщение / скриншот с упоминанием бота.
 
-Бот проверит, похоже ли это на задачу, и пришлёт preview.
+Бот ответит preview через ~3-5 секунд.
 
 ### Правка preview
 
-Ответьте reply на сообщение бота с preview:
+Reply на сообщение бота с preview **с @mention**:
 
 ```
-измени — добавь, что это критический баг
-поправь ожидаемый результат: файлы должны обрабатываться потоково
-убери метку enhancement
+@hermeskimg_bot измени — добавь, что это критический баг
+@hermeskimg_bot поправь ожидаемый результат: файлы должны обрабатываться потоково
+@hermeskimg_bot убери метку enhancement
+@hermeskimg_bot сделай критерии приёмки конкретнее
 ```
 
-### Подтверждение
+### Подтверждение (approve)
 
-Ответьте reply на preview:
+Reply на preview **с @mention**:
 
 ```
-approve
+@hermeskimg_bot approve
 ```
 
-или: `создавай`, `подтверждаю`, `аппрув`, `да, заводи`
+Также работает: `аппрув`, `создавай`, `заводи`, `да`, `ок`, `давай`, `го`, `подтверждаю`, `yes`
 
 Бот создаст issue в GitHub и пришлёт ссылку.
+
+---
+
+## Команды бота
+
+| Команда | Действие |
+|---|---|
+| `/task текст` | Создать preview для задачи |
+| `/issue текст` | То же |
+| `/add текст` | То же |
+| `/start`, `/help` | Справка |
 
 ---
 
@@ -149,13 +158,14 @@ app/
   config.py        — переменные окружения
   bot.py           — aiogram handlers
   storage.py       — SQLite CRUD
-  llm.py           — вызовы LLM (is_issue, preview, edit)
+  llm.py           — вызовы LLM (is_issue, preview, edit) + fallback
   github_client.py — создание issue через GitHub REST API
-  trigger.py       — фильтр: кому отвечать
-  formatter.py     — Markdown-форматирование preview
+  trigger.py       — фильтр триггеров, approve, edit detection
+  formatter.py     — форматирование preview
+  project_context.py — контекст репозиториев для LLM
 data/
-  bot.db           — SQLite база (создаётся автоматически)
+  bot.db           — SQLite (создаётся автоматически)
 docs/
-  ARCHITECTURE.md  — архитектура и принципы работы
+  ARCHITECTURE.md  — архитектура
   WORKLOG.md       — журнал разработки
 ```

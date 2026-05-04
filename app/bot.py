@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import sqlite3
 from typing import Optional
 
 import httpx
@@ -85,10 +86,20 @@ async def handle_message(message: Message, bot: Bot) -> None:
 
     text = (message.text or message.caption or "").strip()
     is_reply_to_bot = trigger.is_reply_to_bot(message, bot_id)
-    is_triggered = trigger.is_triggered(message) or is_reply_to_bot
+    has_explicit_trigger = trigger.is_triggered(message)
 
-    if not is_triggered:
+    if not has_explicit_trigger and not is_reply_to_bot:
         return
+
+    # Reply на сообщение бота — проверяем, является ли оно известным preview
+    replied_preview = None
+    if is_reply_to_bot:
+        replied_preview = storage.get_task_by_preview_msg(
+            message.chat.id, message.reply_to_message.message_id
+        )
+        # Reply на НЕ-preview сообщение бота (ошибка, /start, итд.) — игнорируем
+        if replied_preview is None and not has_explicit_trigger:
+            return
 
     logger.info(
         "Triggered: chat=%s msg=%s user=%s text=%.80s",
@@ -105,23 +116,18 @@ async def handle_message(message: Message, bot: Bot) -> None:
         )
         return
 
-    # ── approve flow (reply to bot preview) ───────────────────────────────────
-    if is_reply_to_bot and trigger.is_approve(text):
-        await _handle_approve(message)
+    # ── approve (reply на известный preview + явный @mention или /команда) ───
+    if replied_preview is not None and has_explicit_trigger and trigger.is_approve(text):
+        await _handle_approve(message, replied_preview)
         return
 
-    # ── edit flow (reply to bot preview) ──────────────────────────────────────
-    if is_reply_to_bot and trigger.is_edit_request(text):
-        await _handle_edit(message, bot)
+    # ── edit (reply на известный preview + явный @mention или /команда) ──────
+    if replied_preview is not None and has_explicit_trigger and trigger.is_edit_request(text):
+        await _handle_edit(message, bot, replied_preview)
         return
 
-    # ── reply to bot, но не approve и не edit — подсказка ────────────────────
-    if is_reply_to_bot and not trigger.is_triggered(message):
-        await message.reply(
-            "Не понял команду.\n"
-            "• approve или создавай — создать issue\n"
-            "• измени... / поправь... — поправить preview"
-        )
+    # ── reply на preview, но нет @mention → молча игнорируем ────────────────
+    if replied_preview is not None and not has_explicit_trigger:
         return
 
     # ── new issue preview ─────────────────────────────────────────────────────
@@ -209,15 +215,7 @@ async def _handle_new_preview(message: Message, bot: Bot) -> None:
 
 # ─── edit preview ─────────────────────────────────────────────────────────────
 
-async def _handle_edit(message: Message, bot: Bot) -> None:
-    chat_id = message.chat.id
-    replied_msg_id = message.reply_to_message.message_id
-
-    task = storage.get_task_by_preview_msg(chat_id, replied_msg_id)
-    if not task:
-        await message.reply("Не нашёл preview, на который вы отвечаете.")
-        return
-
+async def _handle_edit(message: Message, bot: Bot, task: sqlite3.Row) -> None:
     if task["status"] == "created":
         await message.reply(f"Issue уже создан, изменить preview нельзя: {task['github_issue_url']}")
         return
@@ -248,15 +246,7 @@ async def _handle_edit(message: Message, bot: Bot) -> None:
 
 # ─── approve ──────────────────────────────────────────────────────────────────
 
-async def _handle_approve(message: Message) -> None:
-    chat_id = message.chat.id
-    replied_msg_id = message.reply_to_message.message_id
-
-    task = storage.get_task_by_preview_msg(chat_id, replied_msg_id)
-    if not task:
-        await message.reply("Не нашёл preview, на который вы отвечаете.")
-        return
-
+async def _handle_approve(message: Message, task: sqlite3.Row) -> None:
     if task["status"] == "created":
         await message.reply(f"Issue уже создан: {task['github_issue_url']}")
         return

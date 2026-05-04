@@ -6,131 +6,91 @@
 
 ## 2026-05-04 — Старт проекта / MVP
 
-**Участники:** Dmitry Turin, Claude (AI assistant)
+**Участники:** Dmitry Turin, Claude
 
 ### Принятые решения
 
-**Архитектура бота:**
-- Бот — реактивный, не читает историю чата
+- Бот реактивный, не читает историю чата
 - Жёсткий trigger-фильтр: только упоминание, reply на бота, команды
 - Флоу: is_issue check → generate preview → approve → create GitHub issue
-- Правки preview через reply с ключевыми словами (`измени`, `поправь` и др.)
-
-**LLM:**
-- OpenAI-compatible HTTP API (OpenRouter по умолчанию)
-- Конфигурируется через `LLM_BASE_URL` + `LLM_API_KEY` — можно подключить любой провайдер
-- Отдельная vision-модель (`LLM_VISION_MODEL`) для обработки изображений
-- Fallback: если `LLM_VISION_MODEL` не задана — используется `LLM_MODEL`
-
-**Изображения:**
-- Реализованы в MVP: поддержка фото в прямых сообщениях и в replied message
-- Передаются в LLM как base64 data URI (формат OpenAI vision)
-- Оба сценария: фото от пользователя + reply на чужое фото со скриншотом
-
-**Голосовые:**
-- Заглушка в MVP, Whisper-интеграция — в ROADMAP v1.1
-
-**Мультирепозиторий:**
-- В MVP — один репозиторий из `.env`
-- Мультирепо через ключевые слова/название проекта — ROADMAP v1.2
-
-**Язык:**
-- Все ответы бота и содержимое preview — на русском
-- GitHub issue body — на русском
-
-**Деплой:**
-- systemd service, без Docker
-- Ручной перенос на VPS (автодеплой — в планах)
+- LLM: OpenAI-compatible HTTP API, конфигурируется через `LLM_BASE_URL` + `LLM_API_KEY`
+- Fallback-провайдер: `LLM_FALLBACK_*` — автопереключение при ошибках основного
+- Изображения: base64 vision в обоих сценариях (прямое фото + reply на чужое фото)
+- Голосовые: заглушка, Whisper в ROADMAP
+- Язык: всё на русском
 
 ### Созданные файлы
 
-| Файл | Описание |
-|---|---|
-| `app/config.py` | Загрузка и валидация env переменных |
-| `app/storage.py` | SQLite CRUD: tasks table |
-| `app/trigger.py` | Фильтр триггеров, определение approve/edit |
-| `app/llm.py` | is_issue check, generate_preview, edit_preview |
-| `app/github_client.py` | GitHub REST API: create issue |
-| `app/formatter.py` | Markdown для Telegram + GitHub issue body |
-| `app/bot.py` | aiogram handlers: new/edit/approve |
-| `app/main.py` | Точка входа, init DB, polling |
-| `requirements.txt` | aiogram, httpx, python-dotenv |
-| `.env.example` | Шаблон переменных окружения |
-| `issue-bot.service` | systemd unit file |
-| `README.md` | Установка, настройка, использование |
-| `ROADMAP.md` | Планы на будущие версии |
-| `docs/ARCHITECTURE.md` | Архитектурная документация |
-| `docs/WORKLOG.md` | Этот файл |
-
-### Открытые вопросы / TODO до первого запуска
-
-- [ ] Протестировать с реальным Telegram-ботом и группой
-- [ ] Проверить парсинг JSON из разных LLM-моделей (особенно free-tier)
-- [ ] Убедиться, что `ParseMode.MARKDOWN` в aiogram 3 корректно обрабатывает спецсимволы в preview
-- [ ] Проверить загрузку и передачу изображений через OpenRouter vision
-- [ ] Создать GitHub Personal Access Token с нужными правами
+`app/` — config, storage, trigger, llm, github_client, formatter, bot, main  
+`docs/` — ARCHITECTURE.md, WORKLOG.md  
+`README.md`, `ROADMAP.md`, `.env.example`, `issue-bot.service`
 
 ---
 
-## 2026-05-04 — Ограничение по chat_id и рабочий процесс
+## 2026-05-04 — Ограничение по chat_id
 
-**Участники:** Dmitry Turin, Codex (AI assistant)
+**Участники:** Dmitry Turin, Codex
 
 ### Что сделано
-- Добавлена env-переменная `ALLOWED_CHAT_IDS` для ограничения бота по списку Telegram chat ID
-- Бот теперь молча игнорирует сообщения из чатов, которых нет в белом списке
-- Обновлены `.env.example`, `README.md` и `ARCHITECTURE.md`
-- Зафиксирован рабочий процесс: перед правками создавать git-чекпоинт с комментарием на русском
-
-### Принятые решения
-- Не создавать второй `worklog`-файл, а продолжать вести существующий `docs/WORKLOG.md`
-- Формат `ALLOWED_CHAT_IDS`: список числовых `chat_id` через запятую
-- Если `ALLOWED_CHAT_IDS` пустой, бот работает как раньше, без ограничения по чатам
-
-### Следующий шаг
-- Вписать реальный `chat_id` нужной группы в `.env`
-- При желании добавить отдельную команду или лог для быстрого определения `chat_id` группы
+- Добавлена `ALLOWED_CHAT_IDS` — белый список Telegram chat_id через запятую
+- Бот молча игнорирует чаты не из списка
+- Обновлены `.env.example`, `README.md`, `ARCHITECTURE.md`
 
 ---
 
-## 2026-05-04 — Минимальная память проекта
+## 2026-05-04 — Память проекта / контекст репозитория
 
-**Участники:** Dmitry Turin, Codex (AI assistant)
+**Участники:** Dmitry Turin, Codex
 
 ### Что сделано
-- Создан файл [docs/PROJECT_MEMORY.md](/Users/dmitrijturin/VibeCoding/issue-strategy-agent/docs/PROJECT_MEMORY.md) с первым профилем проекта `kimg / pavodok_map`
-- В `ROADMAP` добавлен отдельный этап про память проектов и проектный контекст для LLM
-- Зафиксирована идея, что агенту нужен не только repo, но и краткое описание домена, стека и ограничений legacy-проекта
+- Создан `app/project_context.py` — реестр профилей проектов
+- Краткий `short_context` подмешивается в system prompt при `is_issue`, `generate_preview`, `edit_preview`
+- Первый профиль: `dmitryturin-art/pavodok_map`
 
 ### Принятые решения
-- Начать с человекочитаемого файла памяти, а не сразу с полной машиночитаемой схемы
-- Использовать память проекта как будущий источник контекста для системных промптов
-- Хранить не только стек, но и продуктовый смысл проекта, ключевые сущности и архитектурные ограничения
-
-### Следующий шаг
-- Подключить память проекта к `app/llm.py`, чтобы контекст реально подмешивался в запросы к модели
-- Позже перевести память проектов в реестр для поддержки нескольких репозиториев
+- Не читать полный markdown-файл на каждый LLM-запрос — только короткая сводка
+- Lookup по `GITHUB_DEFAULT_REPO`, чтобы позже легко расширить на мультирепо
 
 ---
 
-## 2026-05-04 — Компактное подключение памяти к LLM
+## 2026-05-04 — Отладка и исправление багов после первого запуска
 
-**Участники:** Dmitry Turin, Codex (AI assistant)
+**Участники:** Dmitry Turin, Claude
+
+### Проблемы и причины
+
+| Проблема | Причина | Исправление |
+|---|---|---|
+| Несколько превью подряд | Бот переобрабатывал старые апдейты при рестарте | `drop_pending_updates=True` при старте |
+| Несколько превью подряд | Race condition в async | In-memory set `_processing` |
+| Апрув не находил preview | Пользователь апрувил не то превью (следствие дублей) | UNIQUE индекс `(chat_id, source_message_id)` |
+| Reply на бота создавал новый preview | Не approved/edit — падало в `_handle_new_preview`, которая подхватывала текст превью из replied_message | Добавлена подсказка вместо fallthrough |
+| Модель не видна в логах | Не логировалась | `logger.info("LLM запрос: модель=...")` |
+| Формат превью | Эмодзи, Markdown, разметка | Нумерованный список, plain text |
+| `openrouter/free` заменён без разрешения | Ошибка — алиас валидный | Возврат к `openrouter/free` |
+
+### Итоговая конфигурация (локальный запуск)
+- Основная модель: `openai/gpt-5.4-mini` @ wormsoft (~2.6с)
+- Fallback: `openrouter/free` → `google/gemma-4-26b:free`
+- Таймаут: 30с (`LLM_TIMEOUT`)
+
+### Первый успешный issue
+- Создан через бота в группе, approve сработал с reply без @mention
+
+---
+
+## 2026-05-04 — Строгий @mention для всех действий
+
+**Участники:** Dmitry Turin, Claude
 
 ### Что сделано
-- Добавлен компактный реестр проектов в `app/project_context.py`
-- Для текущего repo `dmitryturin-art/pavodok_map` создан короткий `short_context` вместо подмешивания полного markdown-файла
-- Контекст проекта подключён к `check_is_issue`, `generate_preview` и `edit_preview`
+- `bot.py`: approve и edit через reply на preview теперь тоже требуют явного `@mention` или `/команды`
+- Reply на preview без @mention — молча игнорируется (раньше показывалась подсказка)
+- Обновлены README, ARCHITECTURE.md
 
 ### Принятые решения
-- Не читать `docs/PROJECT_MEMORY.md` на каждый LLM-запрос
-- Не отправлять в модель всю память проекта целиком
-- Использовать только короткую сжатую сводку, привязанную к конкретному repo
-- Делать memory lookup по `GITHUB_DEFAULT_REPO`, чтобы позже без ломки расширить это на мультирепозиторий
-
-### Следующий шаг
-- При необходимости добавить второй уровень контекста: `short_context` и `extended_context`
-- Позже выбирать проект не только по repo, но и по чату или явному ключу проекта в сообщении
+- Любое взаимодействие с ботом — только через явный @mention. Без исключений.
+- Убрана подсказка при непонятной команде без mention (бот не должен реагировать вообще)
 
 ---
 
