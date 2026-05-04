@@ -11,11 +11,6 @@ from app import config
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {
-    "Authorization": f"Bearer {config.LLM_API_KEY}",
-    "Content-Type": "application/json",
-}
-
 TIMEOUT = 60.0
 
 
@@ -195,22 +190,52 @@ async def edit_preview(current_body: str, edit_instruction: str) -> IssuePreview
         raise
 
 
+def _should_fallback(exc: Exception) -> bool:
+    """Переключаемся на запасной провайдер при сетевых и серверных ошибках."""
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        # 402 оплата, 429 лимит, 5xx сервер — всё это повод попробовать fallback
+        return exc.response.status_code in {402, 429} or exc.response.status_code >= 500
+    return False
+
+
 async def _call_llm(model: str, system: str, content) -> str:
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": content},
     ]
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.2,
+    payload = {"model": model, "messages": messages, "temperature": 0.2}
+
+    try:
+        return await _do_request(config.LLM_BASE_URL, config.LLM_API_KEY, payload)
+    except Exception as exc:
+        if not _should_fallback(exc):
+            raise
+
+        fallback_url = config.LLM_FALLBACK_BASE_URL
+        fallback_key = config.LLM_FALLBACK_API_KEY
+        fallback_model = config.LLM_FALLBACK_MODEL
+
+        if not (fallback_url and fallback_key and fallback_model):
+            logger.warning("Основной LLM недоступен, запасной не настроен: %s", exc)
+            raise
+
+        logger.warning("Основной LLM недоступен (%s), переключаюсь на запасной провайдер", exc)
+        payload["model"] = fallback_model
+        return await _do_request(fallback_url, fallback_key, payload)
+
+
+async def _do_request(base_url: str, api_key: str, payload: dict) -> str:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         resp = await client.post(
-            f"{config.LLM_BASE_URL}/chat/completions",
-            headers=HEADERS,
+            f"{base_url}/chat/completions",
+            headers=headers,
             json=payload,
         )
         resp.raise_for_status()
-        result = resp.json()
-        return result["choices"][0]["message"]["content"]
+        return resp.json()["choices"][0]["message"]["content"]
