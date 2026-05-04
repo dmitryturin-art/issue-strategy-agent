@@ -50,3 +50,118 @@ async def create_issue(
         url: str = resp.json()["html_url"]
         logger.info("GitHub issue created: %s", url)
         return url
+
+
+async def get_issue(*, repo: Optional[str] = None, number: int) -> dict:
+    """Fetch issue data from GitHub."""
+    target_repo = repo or GITHUB_DEFAULT_REPO
+    owner, name = _parse_repo(target_repo)
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(
+            f"{_BASE}/repos/{owner}/{name}/issues/{number}",
+            headers=_HEADERS,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def add_comment(*, repo: Optional[str] = None, number: int, body: str) -> str:
+    """Add a comment to an issue. Returns the comment URL."""
+    target_repo = repo or GITHUB_DEFAULT_REPO
+    owner, name = _parse_repo(target_repo)
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.post(
+            f"{_BASE}/repos/{owner}/{name}/issues/{number}/comments",
+            headers=_HEADERS,
+            json={"body": body},
+        )
+        resp.raise_for_status()
+        url: str = resp.json()["html_url"]
+        logger.info("GitHub comment added: %s", url)
+        return url
+
+
+async def close_issue(*, repo: Optional[str] = None, number: int) -> None:
+    """Close a GitHub issue."""
+    target_repo = repo or GITHUB_DEFAULT_REPO
+    owner, name = _parse_repo(target_repo)
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.patch(
+            f"{_BASE}/repos/{owner}/{name}/issues/{number}",
+            headers=_HEADERS,
+            json={"state": "closed", "state_reason": "completed"},
+        )
+        resp.raise_for_status()
+        logger.info("GitHub issue #%s closed", number)
+
+
+async def reopen_issue(*, repo: Optional[str] = None, number: int) -> None:
+    """Reopen a closed GitHub issue."""
+    target_repo = repo or GITHUB_DEFAULT_REPO
+    owner, name = _parse_repo(target_repo)
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.patch(
+            f"{_BASE}/repos/{owner}/{name}/issues/{number}",
+            headers=_HEADERS,
+            json={"state": "open"},
+        )
+        resp.raise_for_status()
+        logger.info("GitHub issue #%s reopened", number)
+
+
+async def update_issue(
+    *,
+    repo: Optional[str] = None,
+    number: int,
+    title: Optional[str] = None,
+    body: Optional[str] = None,
+    labels: Optional[list[str]] = None,
+) -> None:
+    """Update issue fields. Only provided fields are changed."""
+    target_repo = repo or GITHUB_DEFAULT_REPO
+    owner, name = _parse_repo(target_repo)
+    payload: dict = {}
+    if title is not None:
+        payload["title"] = title
+    if body is not None:
+        payload["body"] = body
+    if labels is not None:
+        payload["labels"] = labels
+    if not payload:
+        return
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.patch(
+            f"{_BASE}/repos/{owner}/{name}/issues/{number}",
+            headers=_HEADERS,
+            json=payload,
+        )
+        resp.raise_for_status()
+        logger.info("GitHub issue #%s updated: %s", number, list(payload.keys()))
+
+
+async def search_issues(
+    *,
+    repo: Optional[str] = None,
+    query: str,
+    state: str = "open",
+) -> list[dict]:
+    """Search issues in the repo. Returns up to 5 results."""
+    target_repo = repo or GITHUB_DEFAULT_REPO
+    q = f"{query} repo:{target_repo} is:issue state:{state}"
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(
+            f"{_BASE}/search/issues",
+            headers=_HEADERS,
+            params={"q": q, "per_page": 5},
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+    return [
+        {
+            "number": i["number"],
+            "title": i["title"],
+            "state": i["state"],
+            "url": i["html_url"],
+        }
+        for i in items
+    ]

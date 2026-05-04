@@ -23,6 +23,15 @@ class MessageContext:
 
 
 @dataclass
+class ActionIntent:
+    action: str  # "comment"|"close"|"reopen"|"update"|"search"|"new_preview"
+    issue_number: Optional[int]
+    instruction: str   # комментарий / инструкция по изменению / текст запроса
+    search_query: Optional[str]
+    state_filter: Optional[str]  # "open"|"closed"|"all"|None (None = уточнить у пользователя)
+
+
+@dataclass
 class IssueCheck:
     is_issue: bool
     reason: str
@@ -201,6 +210,78 @@ async def edit_preview(current_body: str, edit_instruction: str) -> IssuePreview
         )
     except Exception as e:
         logger.error("Failed to parse edit_preview response: %s | raw: %s", e, data[:300])
+        raise
+
+
+async def classify_action(text: str) -> ActionIntent:
+    """Classify user intent: comment / close / reopen / update / search / new_preview."""
+    system = (
+        "Ты помощник Telegram-бота для управления GitHub issues. "
+        "Определи намерение пользователя по его сообщению. "
+        "Отвечай ТОЛЬКО валидным JSON без пояснений."
+    )
+    user_prompt = (
+        f'Сообщение: "{text}"\n\n'
+        "Верни JSON:\n"
+        "{\n"
+        '  "action": "comment|close|reopen|update|search|new_preview",\n'
+        '  "issue_number": 123 или null,\n'
+        '  "instruction": "текст комментария или инструкция по изменению или null",\n'
+        '  "search_query": "поисковый запрос или null",\n'
+        '  "state_filter": "open|closed|all или null если не указано"\n'
+        "}\n\n"
+        "Действия:\n"
+        "- comment: добавить комментарий к существующему issue (#N)\n"
+        "- close: закрыть issue (#N)\n"
+        "- reopen: переоткрыть issue (#N)\n"
+        "- update: изменить заголовок/описание/метки issue (#N)\n"
+        "- search: найти issues по запросу (search_query = поисковые термины)\n"
+        "- new_preview: создать новый issue\n"
+        "issue_number: число из упоминания #N в тексте\n"
+        "instruction: текст после указания действия и номера issue\n"
+        "state_filter: open если 'открытые', closed если 'закрытые', all если 'все', иначе null"
+    )
+    data = await _call_llm(model=config.LLM_MODEL, system=system, content=user_prompt)
+    try:
+        parsed = _extract_json(data)
+        return ActionIntent(
+            action=parsed.get("action", "new_preview"),
+            issue_number=parsed.get("issue_number"),
+            instruction=parsed.get("instruction") or text,
+            search_query=parsed.get("search_query"),
+            state_filter=parsed.get("state_filter"),
+        )
+    except Exception as e:
+        logger.error("Failed to parse classify_action: %s | raw: %s", e, data[:200])
+        return ActionIntent(action="new_preview", issue_number=None, instruction=text, search_query=None, state_filter=None)
+
+
+async def generate_update_patch(current_issue: dict, instruction: str) -> dict:
+    """Ask LLM which fields to update in a GitHub issue. Returns patch dict."""
+    labels = ", ".join(l["name"] for l in current_issue.get("labels", []))
+    system = (
+        "Ты помощник, который обновляет GitHub issues по инструкции. "
+        "Верни только поля, которые нужно изменить. null = не менять. "
+        "Отвечай ТОЛЬКО валидным JSON без пояснений."
+    )
+    user_prompt = (
+        f"Issue #{current_issue.get('number')}:\n"
+        f"Заголовок: {current_issue.get('title')}\n"
+        f"Описание: {(current_issue.get('body') or '')[:600]}\n"
+        f"Метки: {labels or '—'}\n\n"
+        f"Инструкция: {instruction}\n\n"
+        "Верни JSON с полями для обновления:\n"
+        "{\n"
+        '  "title": "новый заголовок или null",\n'
+        '  "body": "новое описание или null",\n'
+        '  "labels": ["метка"] или null\n'
+        "}"
+    )
+    data = await _call_llm(model=config.LLM_MODEL, system=system, content=user_prompt)
+    try:
+        return _extract_json(data)
+    except Exception as e:
+        logger.error("Failed to parse update_patch: %s | raw: %s", e, data[:200])
         raise
 
 

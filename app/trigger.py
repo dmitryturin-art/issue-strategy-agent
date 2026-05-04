@@ -1,4 +1,6 @@
 import re
+from typing import Optional
+
 from aiogram.types import Message
 
 from app.config import BOT_USERNAME
@@ -81,3 +83,44 @@ def is_edit_request(text: str) -> bool:
     # strip bot mention first
     clean = re.sub(rf"@{re.escape(BOT_USERNAME)}", "", clean, flags=re.IGNORECASE).strip()
     return bool(EDIT_KEYWORDS.match(clean))
+
+
+# ── issue action detection ────────────────────────────────────────────────────
+
+_ISSUE_NUMBER_RE = re.compile(r"#(\d+)")
+
+_ISSUE_ACTION_RE = re.compile(
+    r"#\d+"
+    r"|найди|найти|поищи|поиск|ищи"
+    r"|закрой|закрыть|close"
+    r"|открой|открыть|переоткрой|reopen"
+    r"|прокомментируй|прокомментировать|добавь\s+коммент|comment"
+    r"|обнови|обновить|update",
+    re.IGNORECASE,
+)
+
+_STATE_OPEN_RE = re.compile(r"\b(открытые|открытых|открыт|open)\b", re.IGNORECASE)
+_STATE_CLOSED_RE = re.compile(r"\b(закрытые|закрытых|закрыт|closed)\b", re.IGNORECASE)
+_STATE_ALL_RE = re.compile(r"\b(все|all|любые)\b", re.IGNORECASE)
+
+
+def extract_issue_number(text: str) -> Optional[int]:
+    m = _ISSUE_NUMBER_RE.search(text)
+    return int(m.group(1)) if m else None
+
+
+def has_issue_action(text: str) -> bool:
+    """True if the message likely refers to an existing issue action or search."""
+    clean = re.sub(rf"@\w+", "", text)
+    return bool(_ISSUE_ACTION_RE.search(clean))
+
+
+def extract_state_filter(text: str) -> Optional[str]:
+    """Extract open/closed/all state filter from text. None if unclear."""
+    if _STATE_OPEN_RE.search(text):
+        return "open"
+    if _STATE_CLOSED_RE.search(text):
+        return "closed"
+    if _STATE_ALL_RE.search(text):
+        return "all"
+    return None

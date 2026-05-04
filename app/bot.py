@@ -12,14 +12,24 @@ from aiogram.types import Message, PhotoSize
 
 from app import config, storage, trigger
 from app.formatter import format_preview, format_issue_body
-from app.github_client import create_issue
-from app.llm import MessageContext, check_is_issue, generate_preview, edit_preview
+from app.github_client import (
+    create_issue, get_issue, add_comment,
+    close_issue, reopen_issue, update_issue, search_issues,
+)
+from app.llm import (
+    MessageContext, ActionIntent,
+    check_is_issue, generate_preview, edit_preview,
+    classify_action, generate_update_patch,
+)
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 # Защита от race condition: сообщения, которые сейчас обрабатываются
 _processing: set[tuple[int, int]] = set()
+
+# Ожидаем ответа пользователя о статусе поиска: (chat_id, user_id) → search_query
+_pending_search: dict[tuple[int, int], str] = {}
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -129,6 +139,29 @@ async def handle_message(message: Message, bot: Bot) -> None:
     # ── reply на preview, но нет @mention → молча игнорируем ────────────────
     if replied_preview is not None and not has_explicit_trigger:
         return
+
+    clean_text = _clean_mention(text)
+
+    # ── ответ на вопрос о статусе поиска ─────────────────────────────────────
+    pending_key = (message.chat.id, message.from_user.id)
+    if pending_key in _pending_search:
+        state = trigger.extract_state_filter(clean_text)
+        if state:
+            query = _pending_search.pop(pending_key)
+            await _handle_issue_search(message, query, state)
+            return
+        _pending_search.pop(pending_key, None)
+
+    # ── issue actions: комментарий, закрытие, обновление, поиск ──────────────
+    if trigger.has_issue_action(clean_text):
+        try:
+            intent = await classify_action(clean_text)
+        except Exception:
+            await message.reply("Не удалось получить ответ от LLM.")
+            return
+        if intent.action != "new_preview":
+            await _dispatch_issue_intent(message, intent)
+            return
 
     # ── new issue preview ─────────────────────────────────────────────────────
     key = (message.chat.id, message.message_id)
@@ -275,6 +308,121 @@ async def _handle_approve(message: Message, task: sqlite3.Row) -> None:
 
     logger.info("Issue created: task_id=%s url=%s", task["id"], url)
     await message.reply(f"Issue создан: {url}")
+
+
+# ─── issue action dispatch ────────────────────────────────────────────────────
+
+async def _dispatch_issue_intent(message: Message, intent: ActionIntent) -> None:
+    if intent.action in ("comment", "close", "reopen", "update") and not intent.issue_number:
+        await message.reply("Не понял номер issue. Укажите, например: #123")
+        return
+
+    if intent.action == "comment":
+        await _handle_issue_comment(message, intent.issue_number, intent.instruction)
+    elif intent.action == "close":
+        await _handle_issue_close(message, intent.issue_number, intent.instruction)
+    elif intent.action == "reopen":
+        await _handle_issue_reopen(message, intent.issue_number)
+    elif intent.action == "update":
+        await _handle_issue_update(message, intent.issue_number, intent.instruction)
+    elif intent.action == "search":
+        query = intent.search_query or intent.instruction
+        if intent.state_filter:
+            await _handle_issue_search(message, query, intent.state_filter)
+        else:
+            _pending_search[(message.chat.id, message.from_user.id)] = query
+            await message.reply(
+                "Искать среди открытых или закрытых?\n"
+                "Ответьте: @" + config.BOT_USERNAME + " открытые / закрытые / все"
+            )
+
+
+async def _handle_issue_comment(message: Message, number: int, body: str) -> None:
+    try:
+        url = await add_comment(number=number, body=body)
+    except Exception as e:
+        logger.error("GitHub comment error: %s", e)
+        await message.reply(f"Не удалось добавить комментарий к issue #{number}.")
+        return
+    await message.reply(f"Комментарий добавлен к #{number}: {url}")
+
+
+async def _handle_issue_close(message: Message, number: int, comment: str) -> None:
+    try:
+        if comment and comment.strip():
+            await add_comment(number=number, body=comment)
+        await close_issue(number=number)
+    except Exception as e:
+        logger.error("GitHub close error: %s", e)
+        await message.reply(f"Не удалось закрыть issue #{number}.")
+        return
+    await message.reply(f"Issue #{number} закрыт.")
+
+
+async def _handle_issue_reopen(message: Message, number: int) -> None:
+    try:
+        await reopen_issue(number=number)
+    except Exception as e:
+        logger.error("GitHub reopen error: %s", e)
+        await message.reply(f"Не удалось переоткрыть issue #{number}.")
+        return
+    await message.reply(f"Issue #{number} переоткрыт.")
+
+
+async def _handle_issue_update(message: Message, number: int, instruction: str) -> None:
+    try:
+        current = await get_issue(number=number)
+    except Exception as e:
+        logger.error("GitHub get_issue error: %s", e)
+        await message.reply(f"Не удалось получить issue #{number} с GitHub.")
+        return
+
+    try:
+        patch = await generate_update_patch(current, instruction)
+    except Exception:
+        await message.reply("Не удалось получить ответ от LLM.")
+        return
+
+    kwargs: dict = {}
+    if patch.get("title"):
+        kwargs["title"] = patch["title"]
+    if patch.get("body"):
+        kwargs["body"] = patch["body"]
+    if patch.get("labels") is not None:
+        kwargs["labels"] = patch["labels"]
+
+    if not kwargs:
+        await message.reply(f"Не понял, что именно изменить в issue #{number}.")
+        return
+
+    try:
+        await update_issue(number=number, **kwargs)
+    except Exception as e:
+        logger.error("GitHub update error: %s", e)
+        await message.reply(f"Не удалось обновить issue #{number}.")
+        return
+
+    url = current.get("html_url", f"https://github.com/{config.GITHUB_DEFAULT_REPO}/issues/{number}")
+    await message.reply(f"Issue #{number} обновлён: {url}")
+
+
+async def _handle_issue_search(message: Message, query: str, state: str) -> None:
+    state_label = {"open": "открытые", "closed": "закрытые", "all": "все"}.get(state, state)
+    try:
+        results = await search_issues(query=query, state=state)
+    except Exception as e:
+        logger.error("GitHub search error: %s", e)
+        await message.reply("Не удалось выполнить поиск на GitHub.")
+        return
+
+    if not results:
+        await message.reply(f"Issues по запросу «{query}» не найдены ({state_label}).")
+        return
+
+    lines = [f"Найдено {len(results)} issue ({state_label}):"]
+    for r in results:
+        lines.append(f"#{r['number']} — {r['title']}\n{r['url']}")
+    await message.reply("\n\n".join(lines))
 
 
 # ─── commands ─────────────────────────────────────────────────────────────────
