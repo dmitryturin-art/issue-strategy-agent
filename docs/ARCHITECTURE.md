@@ -65,7 +65,7 @@ create_task()
 - `generate_preview(ctx)` → `IssuePreview` — формирует структурированный issue
 - `edit_preview(body, instruction)` → `IssuePreview` — применяет правку
 
-Все три вызывают один `_call_llm()` через `httpx`. Модель выбирается динамически: если есть изображения — `LLM_VISION_MODEL`, иначе `LLM_MODEL`.
+Все три вызывают один `_call_llm()` через `httpx`. Всегда используется `LLM_MODEL`. Если модель не поддерживает vision — API вернёт ошибку, бот сообщит пользователю.
 
 **Контекст (`MessageContext`):**
 ```python

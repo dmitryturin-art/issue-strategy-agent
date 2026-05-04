@@ -64,10 +64,6 @@ def _extract_json(raw: str) -> dict:
     return json.loads(match.group())
 
 
-def _choose_model(has_images: bool) -> str:
-    return config.LLM_VISION_MODEL if has_images else config.LLM_MODEL
-
-
 async def check_is_issue(ctx: MessageContext) -> IssueCheck:
     combined = ctx.text
     if ctx.replied_text:
@@ -85,11 +81,10 @@ async def check_is_issue(ctx: MessageContext) -> IssueCheck:
         "question — короткий уточняющий вопрос, если без него нельзя сформировать задачу, иначе null."
     )
 
-    has_images = bool(ctx.images_b64)
-    content = _build_content(user_prompt, ctx.images_b64) if has_images else user_prompt
+    content = _build_content(user_prompt, ctx.images_b64) if ctx.images_b64 else user_prompt
 
     data = await _call_llm(
-        model=_choose_model(has_images),
+        model=config.LLM_MODEL,
         system=system,
         content=content,
     )
@@ -135,11 +130,10 @@ async def generate_preview(ctx: MessageContext) -> IssuePreview:
         "question — только если критически не хватает данных для формирования задачи, иначе null."
     )
 
-    has_images = bool(ctx.images_b64)
-    content = _build_content(user_prompt, ctx.images_b64) if has_images else user_prompt
+    content = _build_content(user_prompt, ctx.images_b64) if ctx.images_b64 else user_prompt
 
     data = await _call_llm(
-        model=_choose_model(has_images),
+        model=config.LLM_MODEL,
         system=system,
         content=content,
     )
