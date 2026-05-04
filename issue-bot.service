@@ -1,0 +1,18 @@
+[Unit]
+Description=Telegram Issue Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/issue-bot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/issue-bot/venv/bin/python -m app.main
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=issue-bot
+
+[Install]
+WantedBy=multi-user.target
