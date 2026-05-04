@@ -11,6 +11,21 @@ def _require(name: str) -> str:
     return value
 
 
+def _parse_chat_ids(raw_value: str) -> set[int]:
+    chat_ids: set[int] = set()
+    for item in raw_value.split(","):
+        clean = item.strip()
+        if not clean:
+            continue
+        try:
+            chat_ids.add(int(clean))
+        except ValueError as exc:
+            raise RuntimeError(
+                "Invalid ALLOWED_CHAT_IDS value. Use comma-separated numeric chat IDs."
+            ) from exc
+    return chat_ids
+
+
 TELEGRAM_BOT_TOKEN: str = _require("TELEGRAM_BOT_TOKEN")
 
 # Основной провайдер
@@ -28,3 +43,4 @@ GITHUB_DEFAULT_REPO: str = _require("GITHUB_DEFAULT_REPO")
 
 BOT_USERNAME: str = _require("BOT_USERNAME").lstrip("@")
 DATABASE_PATH: str = os.getenv("DATABASE_PATH", "./data/bot.db")
+ALLOWED_CHAT_IDS: set[int] = _parse_chat_ids(os.getenv("ALLOWED_CHAT_IDS", ""))

@@ -73,6 +73,10 @@ async def handle_message(message: Message, bot: Bot) -> None:
     if not message.from_user:
         return
 
+    if config.ALLOWED_CHAT_IDS and message.chat.id not in config.ALLOWED_CHAT_IDS:
+        logger.info("Ignoring message from unauthorized chat: %s", message.chat.id)
+        return
+
     bot_info = await bot.get_me()
     bot_id = bot_info.id
 

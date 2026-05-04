@@ -34,6 +34,7 @@ python -m app.main
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Токен бота от [@BotFather](https://t.me/BotFather) |
 | `BOT_USERNAME` | Username бота без `@` (например `issue_helper_bot`) |
+| `ALLOWED_CHAT_IDS` | Список разрешённых `chat_id` через запятую. Если пусто — бот работает в любых чатах |
 | `LLM_BASE_URL` | Base URL OpenAI-совместимого API (OpenRouter, OpenAI, свой) |
 | `LLM_API_KEY` | API-ключ провайдера |
 | `LLM_MODEL` | Модель по умолчанию (например `meta-llama/llama-3.1-8b-instruct:free`) |
